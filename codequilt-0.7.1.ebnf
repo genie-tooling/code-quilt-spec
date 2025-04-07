@@ -1,0 +1,117 @@
+(* --- CodeQuilt v0.7.1-semantic EBNF --- *)
+(* Based on Specification dated 2025-04-08 *)
+(* GOAL: High compression via fixed+dynamic+corpus dicts and semantic patterns *)
+
+(* -------- Top Level -------- *)
+codequilt-string ::= "[" header "]" "|||" body-tokens
+
+(* -------- Header -------- *)
+(* Key-value pairs separated by semicolons. Case-sensitive keys. *)
+header ::= header-field (";" header-field)*
+
+header-field ::= version-field          (* V: (Implies Corpus Dict & Fixed Tokens) *)
+               | language-field       (* L: Optional Override *)
+               | dynamic-dict-field   (* D: For non-corpus identifiers *)
+               | imports-field        (* I: Optional *)
+               | options-field        (* O: Optional *)
+               | checksum-field       (* C: Optional *)
+               | x-literal-field      (* X: Optional, for long/multiline literals *)
+
+version-field        ::= "V:" version-string           (* e.g., 0.7.1-semantic-py3.11-std25-v1 *)
+language-field       ::= "L:" language-id ("-" language-version)? (* Optional *)
+dynamic-dict-field   ::= "D:" "[" (dynamic-dict-entry ("," dynamic-dict-entry)*)? "]"
+imports-field        ::= "I:" "[" (import-item ("," import-item)*)? "]"
+options-field        ::= "O:" "[" (option ("," option)*)? "]"
+checksum-field       ::= "C:" checksum-algo "-" checksum-hash
+x-literal-field      ::= "X:" "[" (x-lit-entry ("," x-lit-entry)*)? "]"
+
+(* -------- Header Components -------- *)
+version-string       ::= printable-char+ (* Format defined by specific version naming convention *)
+language-id          ::= identifier
+language-version     ::= language-version-char+
+dynamic-dict-entry   ::= "d" digit+ "=" identifier      (* e.g., d0=myCustomVar *)
+import-item          ::= import-path (" " "as" " " identifier)?
+import-path          ::= safe-header-value-char+
+option               ::= identifier ("=" option-value)? (* e.g., cmt=k, lth=80 *)
+option-value         ::= safe-header-value-char+
+checksum-algo        ::= identifier
+checksum-hash        ::= hex-digit+
+x-lit-entry          ::= "l" digit+ "=" base64-string   (* e.g., l0=VGhpcyBpcyB... *)
+
+(* -------- Body -------- *)
+(* Sequence of tokens. Whitespace CHARACTERS between tokens are ignored. *)
+body-tokens ::= (token)*
+
+token ::= structure-token
+        | fixed-keyword-operator-token  (* Single ASCII chars defined by V:/L: *)
+        | semantic-token                (* e.g., LOG(...), ATTR(...) *)
+        | corpus-ref                    (* c<n> *)
+        | dynamic-ref                   (* d<n> *)
+        | literal-ref                   (* l<n> *)
+        | literal-token                 (* Inline numbers, t/f/n, short strings/bytes *)
+        | preprocessor-token            (* Language specific, e.g., C/C++ *)
+        | escape-hatch-token            (* L'{...}' *)
+        | decorator-prefix              (* @ *)
+
+(* -------- Core Token Types -------- *)
+structure-token              ::= "N" | ">" | "<" | "{" | "}" (* N=Newline, >=IndentInc, <=IndentDec *)
+fixed-keyword-operator-token ::= identifier | symbol (* Specific set defined by V:/L: profile, e.g., D, C, ?, :, +, ., &, | *)
+corpus-ref                   ::= "c" digit+
+dynamic-ref                  ::= "d" digit+
+literal-ref                  ::= "l" digit+
+literal-token                ::= string-literal | number-literal | boolean-literal | null-literal | bytes-literal
+preprocessor-token           ::= "#" identifier (* Simplified, language specific *)
+escape-hatch-token           ::= "L" "'{" raw-host-code "}'"
+decorator-prefix             ::= "@"
+
+(* -------- Semantic Tokens -------- *)
+(* Syntax: TOKEN_NAME(<p1>:<p2>...) or TOKEN_NAME(<p1>:{<body>}) *)
+(* ':' is the primary parameter separator. Needs careful parsing if literals contain ':' *)
+semantic-token ::= semantic-token-simple | semantic-token-block
+
+semantic-token-simple ::= semantic-token-name "(" parameter-list ")"
+semantic-token-block  ::= semantic-token-name "(" block-parameter-list ":" "{" body-tokens "}" ")"
+
+semantic-token-name ::= identifier (* Convention: Uppercase, e.g., LOG, ATTR, RETN *)
+
+parameter-list ::= parameter (":" parameter)*
+block-parameter-list ::= parameter (":" parameter)* (* Parameters before the block *)
+
+parameter      ::= corpus-ref | dynamic-ref | literal-ref | literal-token | fixed-keyword-operator-token (* Allow simpler tokens as params where contextually valid *)
+
+(* -------- Literal Token Details -------- *)
+(* Embedded directly in the body or as parameters to semantic tokens *)
+string-literal ::= "'" (single-quoted-string-char)* "'"
+                 | '"' (double-quoted-string-char)* '"'
+number-literal ::= ("+" | "-")? digit+ ("." digit+)? (* Simplified *)
+boolean-literal::= "t" | "f"
+null-literal   ::= "n"
+bytes-literal  ::= "b" string-literal
+
+(* -------- Escape Hatch Content -------- *)
+raw-host-code ::= (raw-host-char)*
+raw-host-char ::= escaped-brace-or-backslash | non-brace-non-backslash-char
+escaped-brace-or-backslash ::= "\\" ("{" | "}" | "\\") (* Escape \, {, } *)
+
+(* -------- Basic Definitions / Character Sets -------- *)
+identifier             ::= letter (letter | digit | "_")*
+base64-string          ::= (base64-char)* ("=" "="?)?
+base64-char            ::= letter | digit | "+" | "/"
+hex-digit              ::= digit | "a".."f" | "A".."F"
+letter                 ::= "a".."z" | "A".."Z"
+digit                  ::= "0".."9"
+symbol                 ::= /* Non-alphanumeric printable ASCII chars used as fixed tokens (e.g., !, #, $, %, &, +, =, ...) */
+printable-char         ::= /* Any printable ASCII character */
+language-version-char  ::= letter | digit | "+" | "."
+safe-header-value-char ::= letter | digit | "_" | "." | "/" | "+" | ":" | "-" | "=" (* Excludes structural chars like [, ], ;, , *)
+
+(* Characters within standard string literals: *)
+single-quoted-string-char ::= escape-sequence | non-apostrophe-non-backslash-char
+double-quoted-string-char ::= escape-sequence | non-quote-non-backslash-char
+escape-sequence           ::= "\\" ( "'" | '"' | "\\" | "n" | "t" | "r" | "b" | "f" | unicode-escape ) (* Common escapes *)
+unicode-escape            ::= "u" hex-digit hex-digit hex-digit hex-digit (* Example *)
+
+(* Conceptual sets for characters *)
+non-apostrophe-non-backslash-char ::= (* Any character that is not "'" or "\" *)
+non-quote-non-backslash-char      ::= (* Any character that is not '"' or "\" *)
+non-brace-non-backslash-char      ::= (* Any character that is not "{", "}", or "\" *)

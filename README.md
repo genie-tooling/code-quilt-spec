@@ -1,73 +1,67 @@
-# Genie Tooling
+# Genie Tooling: CodeQuilt Specification
 
 **Author:** Kal Aeolian
-**Status:** Research / Specification Draft (CodeQuilt v0.2.0)
-**Date:** 2025-04-06
+**Status:** Research / Specification Draft (CodeQuilt v0.7.1)
+**Date:** 2025-04-08
 
-## Introduction: Researching LLMs in Data Pipelines
+---
 
-`genie-tooling` is a project dedicated to researching and exploring effective ways to utilize Large Language Models (LLMs) within data pipelines and complex workflows. Our focus includes interactions with various models (including local models via Ollama), developing agentic AI systems, improving reasoning pipelines, and enhancing the overall reliability and efficiency of LLM integrations.
+***WIP***
 
-One key challenge identified in this research is ensuring the reliability of dynamic code generation, a common task in automated pipelines. This led to the development of the **CodeQuilt** specification.
+This is a work in progress. It compiles and runs in the big language models but the tradeoff depends on the hit level in the corpus. 
 
-## The Challenge: Reliable Code Generation with LLMs
+## The Challenge: Reliable & Efficient Code Generation with LLMs
 
-While LLMs are powerful code generators, they can sometimes fail unpredictably, particularly by truncating output before completion. This is often due to inherent limitations like maximum output token lengths. In automated systems (like data pipelines or agentic workflows), such failures can lead to broken processes, wasted computational resources, and increased operational costs.
+Large Language Models (LLMs) are powerful code generators but can suffer from output truncation (hitting token limits) and inefficient token usage, especially with repetitive code or large identifier sets. This impacts reliability and cost in automated workflows.
 
-## The CodeQuilt Specification (v0.2.0): A Proposed Solution
+## CodeQuilt: A Solution for Compressed Code Representation
 
-CodeQuilt is a specification developed within `genie-tooling` for representing source code in a highly compressed, text-based format. It acts as a textual "blueprint" generated *before* the full code (or instead of, as you prefer to reduce output length and context), designed to capture the complete essence of the intended code reliably.
+CodeQuilt is a specification for representing source code (primarily Python) in a compressed, text-based format optimized for LLM interaction. It acts as a textual "blueprint" designed to:
 
-**Purpose:** The primary goal of CodeQuilt is to improve the *probability of receiving a complete representation* of the LLM's intended code output, working around common limitations.
+* **Maximize Token Density:** Represent code using significantly fewer LLM API tokens than the original source.
+* **Increase Generation Reliability:** Reduce the likelihood of hitting output token limits, ensuring a complete representation is received more often.
+* **Improve Efficiency:** Lower the token cost for transmitting code concepts to/from the LLM during generation, debugging, or modification.
 
-## Benefits in Modern LLM Environments
+## Core Concepts of CodeQuilt v0.7.1-semantic
 
-Employing a CodeQuilt-based approach offers several potential advantages in the context of current LLM constraints, APIs, and costs:
+This version employs a multi-pronged compression strategy tailored for LLMs:
 
-* **Mitigating Output Token Limits:** Generating a compact CodeQuilt string first is significantly less likely to hit maximum output token limits compared to generating potentially lengthy source code directly. This increases the chance of receiving a *usable* output even if the subsequent full code generation gets truncated.
-* **Cost Efficiency & API Usage:**
-    * *Reduced Retries:* Fewer truncated or incomplete code generations can mean fewer wasted API calls and less need for costly retries.
-    * *Potentially Lower Cost-per-Success:* While CodeQuilt involves a two-stage generation, the first stage (generating the short CodeQuilt string) consumes very few tokens. If the second stage (full code) fails, the cost incurred is often less than a single, long, failed generation attempt. This can lead to a lower average cost *per successfully generated, complete code block*.
-    * *Efficient Reconstruction Input:* If reconstruction requires calling an LLM, the small CodeQuilt string serves as concise, efficient input, consuming fewer input tokens than feeding back potentially large amounts of broken or truncated code.
-* **Increased Reliability for Automation:** For data pipelines or agentic systems relying on generated code, using CodeQuilt can enhance robustness by providing a fallback mechanism, reducing the likelihood of workflow failure due to incomplete code generation.
-* **Working Within Context Windows:** The small size of CodeQuilt helps manage limited context windows, both for the initial output and for potential reconstruction or analysis tasks.
+* **Implied Corpus Dictionary:** A standard dictionary (defined by the spec version) maps common Python elements (`print`, `len`, `ValueError`, `self`, `os`, `path`, etc.) to short `c<n>` references, minimizing redundancy for frequent items. This dictionary is not sent in the header.
+* **Dynamic Dictionary:** A small, per-message header (`D:`) maps `d<n>` references only to identifiers specific to the current code snippet and not found in the standard corpus dictionary.
+* **Dense Fixed Tokens:** Single ASCII characters represent core syntax (keywords like `def`->`D`, operators `and`->`&`, structure `newline`->`N`, `indent`->`>`).
+* **Semantic Pattern Tokens:** Compact tokens (e.g., `LOG(...)`, `ATTR(...)`, `RETN(...)`) represent common multi-line code patterns (like logging, checks, common assignments), allowing the LLM to generate these patterns using fewer tokens.
+* **Efficient Literal Handling:** Short literals are embedded directly; long/multiline ones use Base64 in an optional `X:` header.
+* **Comment Removal:** Non-functional comments are discarded by default.
 
-## Intended Usage in an LLM Pipeline
+## Why This Approach Reduces Tokens
 
-The envisioned workflow leverages these benefits:
+* **Corpus & Dynamic Dictionaries:** Heavily reduce token usage for repeated identifiers (common functions, variables) compared to writing them out repeatedly.
+* **Semantic Tokens:** Replace entire code blocks (e.g., a try/except/log pattern) with a single, parameterized token, offering significant savings on common logic structures.
+* **Fixed Tokens & Structure:** Map multi-character keywords/operators and structural whitespace to single characters.
+* **Focus on LLM Tokenizers:** Uses ASCII characters and structures that LLM tokenizers typically handle efficiently (avoiding multi-byte UTF-8 penalties).
 
-1.  **Stage 1: CodeQuilt Generation:** The LLM first generates the compact CodeQuilt string representing the planned code. Due to its small size, this is likely to complete successfully and cost-effectively.
-2.  **Stage 2: Full Code Generation:** The LLM then attempts to generate the standard, full source code.
-3.  **Fallback/Reconstruction:** If Stage 2 output is incomplete or fails, the CodeQuilt string from Stage 1 provides a reliable blueprint for reconstruction, minimizing data loss and potentially reducing the cost and complexity of error handling.
+## Benefits
 
-## Key Features of CodeQuilt v0.2.0
+* **Lower API Costs:** Significantly fewer tokens sent/received per code unit, especially for larger or repetitive code.
+* **Improved Reliability:** Less chance of hitting output limits, leading to more complete generations.
+* **Faster Interaction:** Reduced data transfer can speed up iterative development or agentic loops.
+* **Context Window Management:** Helps fit more complex code concepts within limited context windows.
 
-* **Header Metadata:** Includes language info, identifier mappings (`dict`), optional literal mappings (`lit_dict`), and options. Three verbosity levels offer flexibility.
-* **Compressed Body:** Uses short tokens for keywords, operators, and structure, referencing dictionaries for identifiers and literals.
-* **Structure Representation:** Explicit tokens handle newlines and indentation (`N`, `I+`, `I-`, `{`, `}`).
-* **Embedded Code Handling:** Specifies treating embedded languages (SQL, HTML, etc.) as opaque string literals (using `lit_dict` for larger blocks) to preserve them accurately.
-* **Escape Hatch `L{...}`:** Provides a robust fallback for complex or unique host language syntax.
+## Intended Usage
 
-## Full Specification
+1.  **Prompting:** Provide the LLM with the CodeQuilt spec, the implied Corpus Dictionary content, semantic token definitions, and instruct it to generate CodeQuilt, prioritizing semantic tokens and corpus references for maximum compression.
+2.  **Generation:** LLM generates the compact CodeQuilt string.
+3.  **Reconstruction:** A dedicated parser uses the spec version (to know the corpus dict and fixed tokens), the header (`D:`, `X:`), and the body tokens to reconstruct the full Python code.
 
-The complete technical details, token references, canonical handling rules, and examples can be found in the specification document:
+## Specification Details
 
-➡️ **[Read the full CodeQuilt v0.2.0 Specification](Specification.md)**
+The complete technical specification, including EBNF, token mappings, the standard Corpus Dictionary for the current version, semantic token definitions, and reconstruction notes, can be found here:
+➡️ Read the full CodeQuilt v0.7.1 Specification `(Link to the detailed spec file)`
 
-## Project Status
+## Project Status & Contributing
 
-`genie-tooling` is an active research project. The CodeQuilt specification (v0.2.0) is a draft proposal resulting from this research. No production-ready tools exist yet. Feedback and discussion are welcome.
-
-## About `genie-tooling` / Author
-
-This project and the CodeQuilt specification are currently maintained by Kal Aeolian as part of ongoing research into practical LLM applications in data-centric and agentic systems.
-
-## Contributing
-
-Ideas, feedback, use cases, and constructive criticism related to CodeQuilt or other `genie-tooling` research areas are highly encouraged. Please feel free to open an Issue on this repository to discuss.
+`genie-tooling` and CodeQuilt are research initiatives. This specification (v0.7.1) is a draft reflecting findings on optimizing for LLM token efficiency. Feedback, analysis, benchmarking results, and discussion are highly welcome via Issues.
 
 ## License
 
-*(Consider adding a license file, e.g., MIT License)*
-
-This project is intended to be open source. Please assume [MIT License](LICENSE) unless otherwise specified. (You would need to add a LICENSE file).
+MIT License (Assuming MIT)
