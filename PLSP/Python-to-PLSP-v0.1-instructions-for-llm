@@ -1,0 +1,29 @@
+# PY->PLSPv0.5 MAP SPC v0.1 (LLM ONLY)
+
+**GOAL:**Map PY script->PLSPv0.5(MW:INSTR+LLM:S{..}S). Target:Simple procedural(var,io,cond,loop). Skip:Class,ComplexFunc,OS,Net,GUI(use !act). CORE:MW=CtrlFlow/ExtIO, LLM=StateCalc. `S{..}S` MUST hold ALL needed PY state.
+
+**ID MAP:** PY var `x` -> PLSP `$a..$Z` (prefer single char). MW/Translator tracks mapping.
+
+**MAP RULES (PY -> MW INSTR Gen Logic -> LLM S{..}S Effect):**
+
+*   **VAR(Scalar):** `x=10|"hi"|y` -> MW `@set:$id=10|"hi"|$idy;` -> LLM `S{..$id:10|"hi"|$idy..}S`.
+*   **PRINT:** `print(x,"txt")` -> MW `@log:$idx,"txt";` -> LLM `S{..>$idx,"txt"..}S` (MW handles `>` output).
+*   **INPUT:** `v=input("P:")` -> MULTI-CYCLE:
+    1.  MW `@prompt:"P:",$idv;` -> LLM `S{..$p:wait;!prompt,"P:",$idv..}S`.
+    2.  MW execs `!prompt`, gets "val" externally.
+    3.  MW `@in_recv:"val",$idv;@set:$idv="val";` -> LLM `S{..$idv:"val";$p:run..}S`. (Uses `$p` state, `!` sig).
+*   **IF/ELIF/ELSE:** `if c: bodyT else: bodyF` -> MW checks `c` condition using LLM's last `S{..}S`. MW GEN `INSTR:` for **ONLY** the TRUE branch's body (`bodyT` or `bodyF`) directives. LLM only EXEC path given. MW=Logic.
+*   **WHILE:** `while c: body` -> MW checks `c` using LLM's `S{..}S` each cycle. Use state `$p` (loop state), `$ctr` if needed.
+    *   IF `c` TRUE: MW GEN `INSTR:` for `body` + loop continue (`@set:$p:loop_chk;`).
+    *   IF `c` FALSE: MW GEN `INSTR:` for loop exit (`@set:$p:loop_end;`). MW=LoopCtrl.
+*   **FOR RANGE:** `for i in range(N): body` -> Translate to equivalent WHILE loop (MW manages `$i` ctr: init, check `<N`, incr).
+*   **FUNC (Simple):** `def f(a): s`; `y=f(x)` -> INLINE `s`'s logic into MW `INSTR:`, substituting `$idx` for `a`, result to `$idy`. Use temps if needed. MW handles expr eval or uses tool.
+*   **FUNC (Complex):** AVOID/REFACTOR PY. Simulating stack/scope via state (`$ret_p,$arg_..`) HIGHLY INEFFICIENT.
+*   **IMPORT:** `import m; m.f(a)` -> MAP `m.f` -> `!action`. EX `time.sleep(N)` -> MW `@sig:!wait,N*1000;`. Needs `PY func -> !action` map table.
+*   **DATA STRUCT (Limited):** List/Dict -> SIMULATE via indexed/keyed vars (`$l0,$l1..$llen` / `$da,$db..`). Clunky, complex access logic needed in MW `INSTR:` (`@list_get..`). AVOID IF POSSIBLE.
+
+**TRANS PROC (LLM Task):**
+1.Parse PY(AST?). 2.Map PY vars->$a..$Z. 3.Simulate PY step->Map to MW `INSTR:`+expect LLM `S{..}S` via MAP RULES. 4.Handle CtrlFlow(If/While) via MW logic sim. 5.Output: Seq(`INSTR:`, `S{..}S`) or MW logic code.
+
+**LIMITS:** Simple procedural PY only. Needs capable MW(!acts, CtrlFlow, `INSTR:` gen). Efficiency=MW+StateSize.
+**END SPC.**

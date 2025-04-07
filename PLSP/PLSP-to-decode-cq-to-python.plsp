@@ -145,3 +145,4 @@ S{$p:run; $rc:0}S
 # - Dictionaries (CORPUS_DICT, dynamic_map, literal_map) are managed internally by the `!decode_codequilt_v071` action.
 # - The `S{..}S` state primarily tracks high-level variables, action results, and program flow state (`$p`), not the intricate internal state of the Python decoder.
 # - This approach adheres to the *spirit* of PLSP (MW for control/IO, LLM for state) by abstracting the complex Python logic into a single state-changing black-box operation (`!action`) whose *results* update the PLSP state.
+# - Run with this: 
