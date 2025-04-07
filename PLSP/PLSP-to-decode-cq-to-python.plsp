@@ -1,0 +1,147 @@
+# PLSP Translation Plan (Conceptual due to Complexity)
+# PY Script: CodeQuilt Decoder (Object-Oriented, Complex Parsing, Libs)
+# Target: PLSPv0.5 (MW:INSTR+LLM:S{..}S) - Simple Procedural Focus
+# Outcome: Direct translation infeasible. High-level mapping with heavy !action reliance.
+
+# --- Variable Mapping (Conceptual) ---
+# $a: args (result of !action:parse_args)
+# $b: input_path (from $a or init state)
+# $c: output_path (from $a or derived)
+# $d: file_extension
+# $e: file_base_name
+# $f: input_file_content
+# $g: decoder_state (Implicitly handled by !action:decode)
+# $h: result_content (output of !action:decode)
+# $i: output_directory
+# $j: error_message
+# $p: program_state (run, wait, error, done)
+# $rc: return_code
+# $exists: boolean flag
+# $ok: boolean flag
+
+# --- PLSP Sequence (High-Level Sketch) ---
+
+# --- Phase 1: Setup & Input Validation ---
+
+# MW: Assume initial state provides input/output paths or needs parsing.
+# MW: For simplicity, assume $b holds input path, $c holds optional output path.
+# MW: @set:$p=run;
+S{$p:run}S
+
+# MW: Check if input file exists.
+MW: @sig:!file_exists,$b;
+S{$p:wait; !file_exists,$b}S
+# MW: Receives result, e.g., @in_recv:true,$exists; @set:$exists=true; @set:$p=run;
+# MW: OR @in_recv:false,$exists; @set:$exists=false; @set:$p=run;
+S{$p:run; $b:"input.cq"; $exists:true}S # Example state after check
+
+# MW: Check $exists flag.
+# IF $exists == false:
+MW: @log:"Error: Input file not found:", $b; @set:$rc=1; @set:$p=error;
+S{$p:error; $rc:1; >Error: Input file not found: input.cq}S
+# MW: @sig:!exit,$rc; // End execution
+
+# MW: Get base and extension.
+MW: @sig:!path_splitext,$b;
+S{$p:wait; !path_splitext,$b}S
+# MW: Receives result, e.g., @in_recv:"input",".cq", $e, $d; @set:$e="input"; @set:$d=".cq"; @set:$p=run;
+S{$p:run; $b:"input.cq"; $exists:true; $e:"input"; $d:".cq"}S
+
+# MW: Check extension (simple string compare).
+# IF $d != ".cq":
+MW: @log:"Error: Input file must have a .cq extension."; @set:$rc=1; @set:$p=error;
+S{$p:error; $rc:1; >Error: Input file must have a .cq extension.}S
+# MW: @sig:!exit,$rc; // End execution
+
+# MW: Determine final output path.
+# IF $c is empty or null:
+    # MW: Construct default output path ($e + ".py"). Requires string concat.
+    MW: @sig:!string_concat,$e,".py";
+    S{$p:wait; !string_concat,$e,".py"}S
+    # MW: Receives result, e.g., @in_recv:"input.py",$c_new; @set:$c=$c_new; @set:$p=run;
+    S{$p:run; $b:"input.cq"; $e:"input"; $d:".cq"; $c:"input.py"}S
+# ELSE: $c already holds user-specified path. Assume initial $c="output.py"
+S{$p:run; $b:"input.cq"; $e:"input"; $d:".cq"; $c:"output.py"}S # Example state
+
+# --- Phase 2: Core Decoding ---
+
+@log:"Converting CodeQuilt (.cq) to Python (.py)...";
+S{$p:run; $c:"output.py"; >Converting CodeQuilt (.cq) to Python (.py)...}S
+
+# MW: Read input file content.
+MW: @sig:!file_read,$b;
+S{$p:wait; !file_read,$b}S
+# MW: On Success: @in_recv:<file_content>,$f; @set:$f=<file_content>; @set:$p=run;
+# MW: On Error: @set:$j="Error reading file"; @set:$rc=1; @set:$p=error; @log:$j; @sig:!exit,$rc;
+S{$p:run; $c:"output.py"; $f:"[V:0.7.1...|||c104.M>..."}S # Example state
+
+# MW: Perform the CodeQuilt decoding (Complex logic -> Single !action).
+# MW: This !action encapsulates the *entire* CodeQuiltDecoder class logic.
+MW: @sig:!decode_codequilt_v071,$f;
+S{$p:wait; !decode_codequilt_v071,$f}S
+# MW: On Success: @in_recv:<decoded_python_code>,$h; @set:$h=<decoded_python_code>; @set:$p=run;
+# MW: On Error (e.g., CodeQuiltDecodeError): @in_recv:<error_details>,$j; @set:$j=<error_details>; @set:$rc=1; @set:$p=error; @log:"Error decoding:",$j; @sig:!exit,$rc;
+S{$p:run; $c:"output.py"; $h:"import logging\n..."}S # Example state on success
+
+# --- Phase 3: Output Handling ---
+
+# MW: Check if output path ($c) was specified and result ($h) exists.
+# IF $c is not empty AND $h is not empty/null:
+    # MW: Get directory part of output path.
+    MW: @sig:!path_dirname,$c;
+    S{$p:wait; !path_dirname,$c}S
+    # MW: @in_recv:<dir_path>,$i; @set:$i=<dir_path>; @set:$p=run;
+    S{$p:run; $c:"output.py"; $h:"import logging\n..."; $i:"."}S # Example state
+
+    # MW: Check if directory $i exists (and is not empty/root).
+    # IF $i is not empty:
+        MW: @sig:!dir_exists,$i;
+        S{$p:wait; !dir_exists,$i}S
+        # MW: @in_recv:<exists_bool>,$exists; @set:$exists=<exists_bool>; @set:$p=run;
+        S{$p:run; $c:"output.py"; $h:"..."; $i:"."; $exists:true}S
+
+        # IF $exists == false:
+            # MW: Create directory.
+            MW: @sig:!dir_makedirs,$i;
+            S{$p:wait; !dir_makedirs,$i}S
+            # MW: @in_recv:<success_bool>,$ok; @set:$ok=<success_bool>; @set:$p=run;
+            S{$p:run; $c:"..."; $h:"..."; $i:"."; $exists:false; $ok:true}S
+            # MW: Handle !ok case (set error, log, exit)
+
+    # MW: Write the result ($h) to the output file ($c).
+    MW: @sig:!file_write,$c,$h;
+    S{$p:wait; !file_write,$c,$h}S
+    # MW: On Success: @in_recv:true,$ok; @set:$ok=true; @set:$p=run;
+    # MW: On Error: @set:$j="Error writing file"; @set:$rc=1; @set:$p=error; @log:$j; @sig:!exit,$rc;
+    S{$p:run; $ok:true; >Successfully saved result to: output.py}S
+
+    @log:"Successfully saved result to:", $c;
+    S{$p:run; >Successfully saved result to: output.py}S # State reflects logged output
+
+# ELSE IF $h is not empty/null (but $c was empty): # Handled earlier by setting default $c
+# MW: This path might not be reachable if default $c is always set.
+# MW: If output to stdout is desired when -o omitted:
+#    @log:"\n--- Decoded Python Code ---\n";
+#    S{$p:run; >\n--- Decoded Python Code ---\n}S
+#    @log:$h;
+#    S{$p:run; >$h}S # State reflects logged output
+#    @log:"\n--- End Decoded Code ---\n";
+#    S{$p:run; >\n--- End Decoded Code ---\n}S
+
+# --- Phase 4: Termination ---
+
+# MW: If $p is not 'error':
+MW: @set:$rc=0;
+S{$p:run; $rc:0}S
+# MW: @sig:!exit,$rc;
+# ELSE: Execution already terminated by !exit in error handling branches.
+
+# --- End PLSP Sequence ---
+
+# Notes:
+# - This translation heavily relies on a capable MW implementing various `!actions` (!file_exists, !path_splitext, !string_concat, !file_read, !decode_codequilt_v071, !path_dirname, !dir_exists, !dir_makedirs, !file_write, !exit).
+# - The core complexity of parsing, class simulation, base64, regex, subprocess ('black' formatting within !decode_codequilt_v071) is entirely encapsulated within `!decode_codequilt_v071`.
+# - Error handling (`try...except`) is mapped to MW logic reacting to action failures or specific error states (`$p=error`). Detailed traceback/context from Python exceptions would need to be passed back explicitly by the `!action`.
+# - Dictionaries (CORPUS_DICT, dynamic_map, literal_map) are managed internally by the `!decode_codequilt_v071` action.
+# - The `S{..}S` state primarily tracks high-level variables, action results, and program flow state (`$p`), not the intricate internal state of the Python decoder.
+# - This approach adheres to the *spirit* of PLSP (MW for control/IO, LLM for state) by abstracting the complex Python logic into a single state-changing black-box operation (`!action`) whose *results* update the PLSP state.
