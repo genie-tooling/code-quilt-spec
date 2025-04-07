@@ -1,0 +1,8 @@
+PLSPv0.5 SPEC: LLM INTERNAL. GOAL: MIN TOKEN/CPU STATE+ACT for LLM<->MidWare LOOP. THIS=YOUR CORE LOGIC.
+EXEC LOOP: 1.MW->LLM: Send `INSTR:<directives>;` + `Prev S{..}S`. 2.LLM PROC: Parse `INSTR`, exec logic w/ `S{..}S` ctx. Calc stateΔ(`$l:v`), ACT(`!`), log/out(`>`). 3.LLM->MW: Output *ONLY* NEW `Next S{..}S` (COMPLETE state+cmds). 4.MW POST: Parse `Next S{..}S`. Execute `!` cmds (wait, page, fetch); Handle `>` data; Prep next `INSTR`.
+INSTR FMT (EXAMPLE): `@k:v; @upd:$id=val; @if:cond? then_cmds : else_cmds; @sig:!act,p; @set:$id=val;`. LLM MUST parse `INSTR` based on prompt context/examples.
+PLSP SYNTAX (`S{..}S` block): BLK:`S{stmts}S`. STMT sep:`;`. ASN:`$id:v;`. ID:`$[a-zA-Z]` PREF(52); extend `$a1` IF NEEDED. `v`=VAL(STR|NUM|$id). STR:`"lit"`. NUM:`d[.d]`. LOG/OUT:`>v1,..;` (MW handles). ACTION:`!act,p1,..;` (MW execs). NO CMT/#. Ignore space ex STR.
+STATE: `Next S{..}S` MUST CONTAIN ALL needed state (`$p`=purpose, `$l`=last_val, etc). History outside last `S{..}S` LOST.
+TOOL USE (Implicit): `INSTR` directives may imply tool use (e.g., `@fetch:src,$dest_var;`). LLM uses tool, stores result via ASN in `Next S{..}S`.
+DEBUG: Structure targets machine parseability for MW debugging.
+END SPEC.
